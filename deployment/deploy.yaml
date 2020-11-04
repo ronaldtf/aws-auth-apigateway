@@ -17,8 +17,8 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::${AWS::Partition}:policy/service-role/AWSLambdaBasicExecutionRole
-        
-  AuthorizedLambda:
+
+  PubliclyAccessedLambda:
     Type: AWS::Lambda::Function
     Properties:
       Code:
@@ -27,19 +27,69 @@ Resources:
           def lambda_handler(event, context):
               return {
                   'statusCode': 200,
-                  'body': 'A call withouth authentication has been successfully responded'
+                  'body': 'SUCCESS: Your UNAUTHENTICATED request has been correctly received and processed'
           }
-      FunctionName: !Sub ${AWS::StackName}
+      FunctionName: !Sub ${AWS::StackName}-public
       Handler: index.lambda_handler
-      Description: Authorized lambda
+      Description: Publicly accessed lambda
       Role: !GetAtt LambdaExecutionRole.Arn
       Runtime: python3.7
 
-  LambdaPermission:
+  PubliclyAccessedLambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:invokeFunction
-      FunctionName: !GetAtt AuthorizedLambda.Arn
+      FunctionName: !GetAtt PubliclyAccessedLambda.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${MyAPIGateway}/*'
+
+  IAMAccessedLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          def lambda_handler(event, context):
+              return {
+                  'statusCode': 200,
+                  'body': 'SUCCESS: If you have obtained this response is because you have been correctly SIGNED the request to the API Gateway with IAM credentials'
+          }
+      FunctionName: !Sub ${AWS::StackName}-iam
+      Handler: index.lambda_handler
+      Description: IAM accessed lambda
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+
+  CognitoAccessedLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          def lambda_handler(event, context):
+              return {
+                  'statusCode': 200,
+                  'body': 'SUCCESS: If you have obtained this response is because you have been correctly AUTHORIZED BY COGNITO to do the request to the API Gateway'
+          }
+      FunctionName: !Sub ${AWS::StackName}-cognito
+      Handler: index.lambda_handler
+      Description: Cognito accessed lambda
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+
+  CognitoAccessedLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !GetAtt CognitoAccessedLambda.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${MyAPIGateway}/*'
+  
+  IAMAccessedLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !GetAtt IAMAccessedLambda.Arn
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${MyAPIGateway}/*'
 
@@ -112,7 +162,7 @@ Resources:
 
   MyAPIGatewayPublicResourceMethod:
     DependsOn:
-      - AuthorizedLambda
+      - PubliclyAccessedLambda
       - MyAPIGatewayPublicResource
     Type: AWS::ApiGateway::Method
     Properties:
@@ -121,7 +171,7 @@ Resources:
       Integration:
         Type: AWS
         IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizedLambda.Arn}/invocations'
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PubliclyAccessedLambda.Arn}/invocations'
         IntegrationResponses:
           - StatusCode: 200
         RequestTemplates:
@@ -136,7 +186,7 @@ Resources:
 
   MyAPIGatewayIAMResourceMethod:
     DependsOn:
-      - AuthorizedLambda
+      - IAMAccessedLambda
       - MyAPIGatewayIAMResource
     Type: AWS::ApiGateway::Method
     Properties:
@@ -145,7 +195,7 @@ Resources:
       Integration:
         Type: AWS
         IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizedLambda.Arn}/invocations'
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${IAMAccessedLambda.Arn}/invocations'
         IntegrationResponses:
           - StatusCode: 200
         RequestTemplates:
@@ -160,7 +210,7 @@ Resources:
 
   MyAPIGatewayCognitoResourceMethod:
     DependsOn:
-      - AuthorizedLambda
+      - CognitoAccessedLambda
       - MyAPIGatewayCognitoResource
     Type: AWS::ApiGateway::Method
     Properties:
@@ -169,7 +219,7 @@ Resources:
       Integration:
         Type: AWS
         IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizedLambda.Arn}/invocations'
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CognitoAccessedLambda.Arn}/invocations'
         IntegrationResponses:
           - StatusCode: 200
         RequestTemplates:
@@ -208,9 +258,9 @@ Resources:
           ResponseModels:
             application/json: Empty
           ResponseParameters:
-              method.response.header.Access-Control-Allow-Headers: true
-              method.response.header.Access-Control-Allow-Methods: true
-              method.response.header.Access-Control-Allow-Origin: true
+              method.response.header.Access-Control-Allow-Headers: false
+              method.response.header.Access-Control-Allow-Methods: false
+              method.response.header.Access-Control-Allow-Origin: false
       ResourceId: !Ref MyAPIGatewayPublicResource
       RestApiId: !Ref MyAPIGateway
 
@@ -240,9 +290,9 @@ Resources:
           ResponseModels:
             application/json: Empty
           ResponseParameters:
-              method.response.header.Access-Control-Allow-Headers: true
-              method.response.header.Access-Control-Allow-Methods: true
-              method.response.header.Access-Control-Allow-Origin: true
+              method.response.header.Access-Control-Allow-Headers: false
+              method.response.header.Access-Control-Allow-Methods: false
+              method.response.header.Access-Control-Allow-Origin: false
       ResourceId: !Ref MyAPIGatewayIAMResource
       RestApiId: !Ref MyAPIGateway
 
@@ -272,9 +322,9 @@ Resources:
           ResponseModels:
             application/json: Empty
           ResponseParameters:
-              method.response.header.Access-Control-Allow-Headers: true
-              method.response.header.Access-Control-Allow-Methods: true
-              method.response.header.Access-Control-Allow-Origin: true
+              method.response.header.Access-Control-Allow-Headers: false
+              method.response.header.Access-Control-Allow-Methods: false
+              method.response.header.Access-Control-Allow-Origin: false
       ResourceId: !Ref MyAPIGatewayCognitoResource
       RestApiId: !Ref MyAPIGateway
 
@@ -297,7 +347,7 @@ Resources:
           LoggingLevel: INFO
           ResourcePath: "/*"
       RestApiId: !Ref MyAPIGateway
-      StageName: test
+      StageName: demo
 
   S3AccessBucket:
     Type: AWS::S3::Bucket
@@ -335,8 +385,12 @@ Resources:
               - Effect: Allow
                 Action: 
                   - s3:GetObject
+                  - s3:ListObjects
+                  - s3:ListBucket
+                  - s3:ListAllMyBuckets
                 Resource:
                   - !Sub arn:aws:s3:::${S3AccessBucket}/*
+                  - !Sub arn:aws:s3:::${S3AccessBucket}
         - PolicyName: invoke-api-gateway
           PolicyDocument:
             Version: '2012-10-17'
@@ -418,23 +472,27 @@ Resources:
         - ALLOW_USER_PASSWORD_AUTH
         - ALLOW_ADMIN_USER_PASSWORD_AUTH
         - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
       UserPoolId: !Ref CognitoUserPool
 
 
 
 Outputs:
-  RootUrl:
-    Description: Root URL of the API gateway
-    Value: !Sub 'https://${MyAPIGateway}.execute-api.${AWS::Region}.amazonaws.com'
-  CognitoUserPool:
+  UserPool:
     Description: Cognito user pool
     Value: !Ref CognitoUserPool
-  CognitoAppClient:
+  UserPoolAppClient:
     Description: Cognito App Client
     Value: !Ref UserPoolAppClient
   FederatedIdentity:
     Description: Federated Identity
     Value: !Ref FedIdentity
-  Bucket:
+  ReferredBucket:
     Description: Accessed bucket
     Value: !Ref S3AccessBucket
+  ApiEndpoint:
+    Description: API Endpoint URL
+    Value: !Sub https://${MyAPIGateway}.execute-api.${AWS::Region}.amazonaws.com/demo
+  Region:
+    Description: Deployed region
+    Value: !Ref AWS::Region
