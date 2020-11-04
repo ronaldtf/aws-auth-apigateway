@@ -1,0 +1,440 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create a simple API Gateway with a resource, a method and a Lambda function
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::${AWS::Partition}:policy/service-role/AWSLambdaBasicExecutionRole
+        
+  AuthorizedLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          def lambda_handler(event, context):
+              return {
+                  'statusCode': 200,
+                  'body': 'A call withouth authentication has been successfully responded'
+          }
+      FunctionName: !Sub ${AWS::StackName}
+      Handler: index.lambda_handler
+      Description: Authorized lambda
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !GetAtt AuthorizedLambda.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${MyAPIGateway}/*'
+
+  APIGatewayCloudWatchLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: ApiGatewayLogsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                  - logs:PutLogEvents
+                  - logs:GetLogEvents
+                  - logs:FilterLogEvents
+                Resource: "*"
+
+  APIGatewayAccount:
+    DependsOn:
+      - APIGatewayCloudWatchLogsRole
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt APIGatewayCloudWatchLogsRole.Arn
+
+  MyAPIGateway:
+    Type: AWS::ApiGateway::RestApi
+    DependsOn: APIGatewayAccount
+    Properties:
+      Description: API Gateway Rest API
+      FailOnWarnings: true
+      Name: !Ref AWS::StackName
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  MyAPIGatewayPublicResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref MyAPIGateway
+      ParentId: !GetAtt MyAPIGateway.RootResourceId
+      PathPart: public
+
+  MyAPIGatewayIAMResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref MyAPIGateway
+      ParentId: !GetAtt MyAPIGateway.RootResourceId
+      PathPart: iam
+
+  MyAPIGatewayCognitoResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref MyAPIGateway
+      ParentId: !GetAtt MyAPIGateway.RootResourceId
+      PathPart: cognito
+
+  MyAPIGatewayPublicResourceMethod:
+    DependsOn:
+      - AuthorizedLambda
+      - MyAPIGatewayPublicResource
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizedLambda.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: 200
+        RequestTemplates:
+          application/json: |
+           $input.json("$")
+      RequestParameters:
+        method.request.querystring.name: false
+      ResourceId: !Ref MyAPIGatewayPublicResource
+      RestApiId: !Ref MyAPIGateway
+      MethodResponses:
+        - StatusCode: 200
+
+  MyAPIGatewayIAMResourceMethod:
+    DependsOn:
+      - AuthorizedLambda
+      - MyAPIGatewayIAMResource
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizedLambda.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: 200
+        RequestTemplates:
+          application/json: |
+           $input.json("$")
+      RequestParameters:
+        method.request.querystring.name: false
+      ResourceId: !Ref MyAPIGatewayIAMResource
+      RestApiId: !Ref MyAPIGateway
+      MethodResponses:
+        - StatusCode: 200
+
+  MyAPIGatewayCognitoResourceMethod:
+    DependsOn:
+      - AuthorizedLambda
+      - MyAPIGatewayCognitoResource
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizedLambda.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: 200
+        RequestTemplates:
+          application/json: |
+           $input.json("$")
+      RequestParameters:
+        method.request.querystring.name: false
+      ResourceId: !Ref MyAPIGatewayCognitoResource
+      RestApiId: !Ref MyAPIGateway
+      MethodResponses:
+        - StatusCode: 200
+
+  PublicMethodCORS:
+    DependsOn: 
+    - MyAPIGatewayPublicResource
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: False
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            SelectionPattern: ''
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*''"
+            ResponseTemplates:
+              application/json: ''
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+          ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: true
+              method.response.header.Access-Control-Allow-Methods: true
+              method.response.header.Access-Control-Allow-Origin: true
+      ResourceId: !Ref MyAPIGatewayPublicResource
+      RestApiId: !Ref MyAPIGateway
+
+  IAMMethodCORS:
+    DependsOn:
+    - MyAPIGatewayIAMResource
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: False
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            SelectionPattern: ''
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*''"
+            ResponseTemplates:
+              application/json: ''
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+          ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: true
+              method.response.header.Access-Control-Allow-Methods: true
+              method.response.header.Access-Control-Allow-Origin: true
+      ResourceId: !Ref MyAPIGatewayIAMResource
+      RestApiId: !Ref MyAPIGateway
+
+  CognitoMethodCORS:
+    DependsOn:
+    - MyAPIGatewayCognitoResource
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: False
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            SelectionPattern: ''
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*''"
+            ResponseTemplates:
+              application/json: ''
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+          ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: true
+              method.response.header.Access-Control-Allow-Methods: true
+              method.response.header.Access-Control-Allow-Origin: true
+      ResourceId: !Ref MyAPIGatewayCognitoResource
+      RestApiId: !Ref MyAPIGateway
+
+  MyAPIGatewayDeployment:
+    DependsOn:
+      - MyAPIGatewayPublicResourceMethod
+      - MyAPIGatewayIAMResourceMethod
+      - MyAPIGatewayCognitoResourceMethod
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref MyAPIGateway
+
+  MyAPIGatewayStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      DeploymentId: !Ref MyAPIGatewayDeployment
+      MethodSettings:
+        - DataTraceEnabled: true
+          HttpMethod: "*"
+          LoggingLevel: INFO
+          ResourcePath: "/*"
+      RestApiId: !Ref MyAPIGateway
+      StageName: test
+
+  S3AccessBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedOrigins: ['*']
+            AllowedMethods: [GET]
+            Id: 'allow-public-access'
+
+  # Role to be attached to the Federated Identity
+  FedIdentityRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: !Sub ${AWS::StackName}-fedidentity-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated:
+                - 'cognito-identity.amazonaws.com'
+            Action: 
+              - 'sts:AssumeRoleWithWebIdentity'
+            Condition:
+              StringEquals:
+                'cognito-identity.amazonaws.com:aud': !Ref FedIdentity
+      Path: '/'
+      Policies:
+        - PolicyName: access-to-s3
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - s3:GetObject
+                Resource:
+                  - !Sub arn:aws:s3:::${S3AccessBucket}/*
+        - PolicyName: invoke-api-gateway
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - execute-api:Invoke
+                Resource:
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/GET/public"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/GET/iam"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/GET/cognito"
+
+  FedIdentity:
+    Type: AWS::Cognito::IdentityPool
+    Properties: 
+      AllowUnauthenticatedIdentities: False
+      IdentityPoolName: !Sub ${AWS::StackName}
+      CognitoIdentityProviders: 
+        - ClientId: !Ref UserPoolAppClient
+          ProviderName: !Sub cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}
+
+  CognitoFedIdentityRoleAttachment:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties: 
+      IdentityPoolId: !Ref FedIdentity
+      Roles:
+        authenticated: !GetAtt FedIdentityRole.Arn          
+
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties: 
+      AdminCreateUserConfig: 
+        AllowAdminCreateUserOnly: False
+      AutoVerifiedAttributes: 
+        - email
+      DeviceConfiguration: 
+        ChallengeRequiredOnNewDevice: False
+        DeviceOnlyRememberedOnUserPrompt: False
+      UsernameAttributes:
+        - email
+      MfaConfiguration: 'OFF'
+      Policies: 
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: True
+          RequireNumbers: True
+          RequireSymbols: True
+          RequireUppercase: True
+          TemporaryPasswordValidityDays: 30
+      Schema: 
+        - AttributeDataType: String
+          Mutable: False
+          Name: 'sub'
+          StringAttributeConstraints: 
+            MaxLength: 99
+            MinLength: 1
+          Required: False
+        - AttributeDataType: String
+          Name: email
+          Required: True
+          Mutable: False
+      UsernameAttributes: 
+        - email
+      UserPoolName: !Sub ${AWS::StackName}
+
+  # User Pool App Client
+  UserPoolAppClient:
+    DependsOn:
+      - CognitoUserPool
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: cognitoClientApp
+      AllowedOAuthFlowsUserPoolClient: False
+      GenerateSecret: False
+      ReadAttributes: 
+        - email
+      RefreshTokenValidity: 30
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      UserPoolId: !Ref CognitoUserPool
+
+
+
+Outputs:
+  RootUrl:
+    Description: Root URL of the API gateway
+    Value: !Sub 'https://${MyAPIGateway}.execute-api.${AWS::Region}.amazonaws.com'
+  CognitoUserPool:
+    Description: Cognito user pool
+    Value: !Ref CognitoUserPool
+  CognitoAppClient:
+    Description: Cognito App Client
+    Value: !Ref UserPoolAppClient
+  FederatedIdentity:
+    Description: Federated Identity
+    Value: !Ref FedIdentity
+  Bucket:
+    Description: Accessed bucket
+    Value: !Ref S3AccessBucket
