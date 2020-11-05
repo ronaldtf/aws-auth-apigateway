@@ -5,9 +5,9 @@
 ############################################################################################
 #################################### PARAMETERS ############################################
 ############################################################################################
-PROFILE=test
+PROFILE=
 
-STACK_NAME=test
+STACK_NAME=
 ############################################################################################
 ############################################################################################
 ############################################################################################
@@ -86,6 +86,9 @@ if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
     echo -ne "\n"
 elif [[ "$1" == "-d" ]] || [[ "$1" == "--delete" ]]; then
 
+    CURR_TIME=$(cat ./.time.txt)
+    aws s3 rb s3://${STACK_NAME}-$CURR_TIME --profile $PROFILE
+
     aws cloudformation describe-stacks --profile ${PROFILE} --stack-name ${STACK_NAME} 1>/dev/null 2>/dev/null
     if [ $? -ne 0 ]; then # Stack does not exist
         echo "Stack ${STACK_NAME} does not exist"
@@ -103,11 +106,27 @@ elif [[ "$1" == "-d" ]] || [[ "$1" == "--delete" ]]; then
             exit
         fi
         rm -rf /tmp/deploy.tmp
+        rm ./.time.txt
     fi
 else
 
+    CURR_TIME=$(date +"%Y%M%d%H%m%s")
+    echo "$CURR_TIME" > ./.time.txt
+    aws s3 mb s3://${STACK_NAME}-${CURR_TIME} --profile $PROFILE
+    if [ $? -ne 0 ]; then
+        echo "Error creating the bucket"
+        exit 1
+    fi
+    aws s3 cp ../resources/python.zip s3://${STACK_NAME}-${CURR_TIME} --profile $PROFILE
+    if [ $? -ne 0 ]; then
+        echo "Error putting the files in the bucket"
+        aws s3 rb s3://${STACK_NAME}-${CURR_TIME}
+        rm ./.time.txt
+        exit 1
+    fi
+
     echo "Deploying stack..."
-    aws cloudformation create-stack --profile ${PROFILE} --stack-name ${STACK_NAME} --template-body file://${DEPLOY_FILE} --capabilities CAPABILITY_NAMED_IAM
+    aws cloudformation create-stack --profile ${PROFILE} --stack-name ${STACK_NAME} --template-body file://${DEPLOY_FILE} --parameters ParameterKey=SourceCodeAuthS3,ParameterValue=${STACK_NAME}-${CURR_TIME} --capabilities CAPABILITY_NAMED_IAM
 
     if [ $? -eq 0 ]; then
         echo "Waiting stack to finish..."
