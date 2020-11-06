@@ -87,6 +87,7 @@ if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
 elif [[ "$1" == "-d" ]] || [[ "$1" == "--delete" ]]; then
 
     CURR_TIME=$(cat ./.time.txt)
+    aws s3 rm s3://${STACK_NAME}-$CURR_TIME/python.zip --profile $PROFILE
     aws s3 rb s3://${STACK_NAME}-$CURR_TIME --profile $PROFILE
 
     aws cloudformation describe-stacks --profile ${PROFILE} --stack-name ${STACK_NAME} 1>/dev/null 2>/dev/null
@@ -120,7 +121,7 @@ else
     aws s3 cp ../resources/python.zip s3://${STACK_NAME}-${CURR_TIME} --profile $PROFILE
     if [ $? -ne 0 ]; then
         echo "Error putting the files in the bucket"
-        aws s3 rb s3://${STACK_NAME}-${CURR_TIME}
+        aws s3 rb s3://${STACK_NAME}-${CURR_TIME} --profile $PROFILE
         rm ./.time.txt
         exit 1
     fi
