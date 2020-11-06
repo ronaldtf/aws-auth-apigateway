@@ -48,6 +48,7 @@ Resources:
           import jwt
           import json
           import os
+          import string
 
           # NOTE: it will take the effect = Allow only if it takes it from the 
           # environment variable and the token has the required field
@@ -55,15 +56,15 @@ Resources:
               SIGNATURE = os.environ['SIGNATURE']
               EFFECT = os.environ['EFFECT']
               TOKEN_FIELD = os.environ['TOKEN_FIELD']
-              if (length(EFFECT) == 0 || (EFFECT.lower() != 'allow' && EFFECT.lower() != 'deny')):
+              if (len(EFFECT) == 0 or (EFFECT.lower() != 'allow' and EFFECT.lower() != 'deny')):
                 EFFECT = 'Deny'
               print(json.dumps(event))
               token = event['authorizationToken']
               methodArn = event['methodArn']
-              decodedToken = jwt.decode(token, SIGNATURE, ['HS256'])
+              decodedToken = jwt.decode(token, SIGNATURE, algorithms='RS256')
               
               try:
-                  if (length(TOKEN_FIELD) != 0)
+                  if (len(TOKEN_FIELD) != 0):
                     print(decodedToken[TOKEN_FIELD]) # This is just to verify it exists within the token
                   EFFECT='Allow'
               except KeyError as e:
@@ -86,6 +87,7 @@ Resources:
               authResponse["policyDocument"] = policyDocument
 
               return authResponse
+
 
       FunctionName: !Sub ${AWS::StackName}-authorizer
       Handler: index.lambda_handler
@@ -329,7 +331,6 @@ Resources:
           application/json: '{"statusCode": 200}'
         IntegrationResponses:
           - StatusCode: 200
-            SelectionPattern: ''
             ResponseParameters:
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
               method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
