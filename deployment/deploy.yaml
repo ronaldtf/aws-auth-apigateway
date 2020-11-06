@@ -362,7 +362,6 @@ Resources:
           application/json: '{"statusCode": 200}'
         IntegrationResponses:
           - StatusCode: 200
-            SelectionPattern: ''
             ResponseParameters:
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
               method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
@@ -394,7 +393,6 @@ Resources:
           application/json: '{"statusCode": 200}'
         IntegrationResponses:
           - StatusCode: 200
-            SelectionPattern: ''
             ResponseParameters:
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
               method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
