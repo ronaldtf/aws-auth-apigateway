@@ -49,21 +49,27 @@ Resources:
           import json
           import os
 
+          # NOTE: it will take the effect = Allow only if it takes it from the 
+          # environment variable and the token has the required field
           def lambda_handler(event, context):
               SIGNATURE = os.environ['SIGNATURE']
+              EFFECT = os.environ['EFFECT']
+              TOKEN_FIELD = os.environ['TOKEN_FIELD']
+              if (length(EFFECT) == 0 || (EFFECT.lower() != 'allow' && EFFECT.lower() != 'deny')):
+                EFFECT = 'Deny'
               print(json.dumps(event))
               token = event['authorizationToken']
               methodArn = event['methodArn']
               decodedToken = jwt.decode(token, SIGNATURE, ['HS256'])
               
-              effect='Deny'
               try:
-                  #decodedToken['sub']
-                  effect='Allow'
+                  if (length(TOKEN_FIELD) != 0)
+                    print(decodedToken[TOKEN_FIELD]) # This is just to verify it exists within the token
+                  EFFECT='Allow'
               except KeyError as e:
                   raise Exception('Unauthorized')
 
-              return generatePolicy(effect, methodArn)
+              return generatePolicy(EFFECT, methodArn)
 
           def generatePolicy(effect, resource):
               authResponse = {};
@@ -91,6 +97,9 @@ Resources:
       Environment:
         Variables:
           SIGNATURE: !Ref TokenSignature
+          EFFECT: Allow
+          TOKEN_FIELD: ''
+
 
   PubliclyAccessedLambda:
     Type: AWS::Lambda::Function

@@ -105,7 +105,7 @@ var showToken = function() {
 
         doClear()
         output(JSON.stringify(idTokenDecoded, null, 2), document.getElementById("result"))
-        output(idToken, document.getElementById("result2"))
+        output(idToken.jwtToken, document.getElementById("result2"))
     } else {
         doClear()
         output("No token", document.getElementById("result2"))
